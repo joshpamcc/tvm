@@ -87,7 +87,6 @@ void CUPTIAPI TVMCuptiInterface::get_CUPTI_Activity(CUcontext ctx, uint32_t stre
 
 void createEventData(CUpti_EventID *event_ID[], CUpti_MetricID *metric_ID[], int num_metrics, int num_events, std::string metricNames[])
 {
-    
     TVMCuptiInterface::EventData_t *eventData = new TVMCuptiInterface::EventData_t ();
     eventData->eventId = (CUpti_EventID*) calloc(sizeof(CUpti_EventID), num_events);
     eventData->metricId = (CUpti_MetricID*) calloc(sizeof(CUpti_MetricID), num_metrics);
@@ -170,7 +169,9 @@ void TVMCuptiInterface::setup_CUPTI_Gathering()
 {
     cudaDeviceSynchronize();
     cuptiActivityEnable(CUPTI_ACTIVITY_KIND_KERNEL);
-    //cuptiActivityRegisterCallbacks(TVMCuptiInterface::allocate_Buffer, TVMCuptiInterface::get_CUPTI_Activity);
+    cuptiActivityRegisterCallbacks(TVMCuptiInterface::allocate_Buffer, TVMCuptiInterface::get_CUPTI_Activity);
+    //
+
     catchCUPTIError(cuptiSetEventCollectionMode(TVMCuptiInterface::CurrentDevice->device_context, CUPTI_EVENT_COLLECTION_MODE_KERNEL));
     if (TVMCuptiInterface::CurrentConfiguration->num_metrics > 0)
     {

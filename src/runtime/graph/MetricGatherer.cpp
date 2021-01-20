@@ -19,22 +19,24 @@ class MetricGatherer : public GraphRuntime
         }
     }
 
-    void setup(json &config, TVMContext ctx) //dev id = 0
+    std::string collect(std::string config) //dev id = 0
     {
-        json operationData = json::object();
-        operationData["operation"] = json::array();
-        operationData["CUPTI"] = json::array();
-        run();
-        std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::nanoseconds> tbegin, tend;
-        tbegin = std::chrono::high_resolution_clock::now();
-        for(int i = 0; i < op_execs_.size(); i++)
-        {
-            runOP(i, operationData);
-        }
-        tend = std::chrono::high_resolution_clock::now();
-        double duration = std::chrono::duration_cast<std::chrono::duration<double> >(tend - tbegin).count(); //duration
-        json op = {{"op","total"},{"Duration",duration}};
-        operationData["operation"].push_back(op);
+      json Config = json::parse(config); //gets metric/event config
+      json operationData = json::object();
+      operationData["operation"] = json::array();
+      operationData["CUPTI"] = json::array();
+      run();
+      std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::nanoseconds> tbegin, tend;
+      tbegin = std::chrono::high_resolution_clock::now();
+      for(int i = 0; i < op_execs_.size(); i++)
+      {
+          runOP(i, operationData);
+      }
+      tend = std::chrono::high_resolution_clock::now();
+      double duration = std::chrono::duration_cast<std::chrono::duration<double> >(tend - tbegin).count(); //duration
+      json op = {{"op","total"},{"Duration",duration}};
+      operationData["operation"].push_back(op);
+      return operationData.dump();
     }
 
     void runOP(int index, json object)
@@ -61,22 +63,47 @@ class MetricGatherer : public GraphRuntime
     PackedFunc GetFunction(const std::string& name, const ObjectPtr<Object>& sptr_to_self);
 };
 
-PackedFunc MetricGatherer::GetFunction(const std::string& name, const ObjectPtr<Object>& sptr_to_self) {
+PackedFunc MetricGatherer::GetFunction(const std::string& name, const ObjectPtr<Object>& sptr_to_self) 
+{
   // return member functions during query.
-  if (name == "setup") 
+  if (name == "collect") 
   {
     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) 
     {
-      *rv = this->MetricGatherer::setup(*args[0], args[1]); //run thing
+      *rv = this->MetricGatherer::collect(args[0]); //run thing
     });
   } 
   else 
   {
-      //err
-    return GraphRuntime::GetFunction(name, sptr_to_self);
+    std::cerr<<"Not a valid function";
+    exit(-1);
   }
 }
 
+Module MetricGathererGraphCreate(const std::string& sym_json, const tvm::runtime::Module& m, const std::vector<TVMContext>& ctxs, PackedFunc lookup_linked_param_func, const std::string& cupti_json) 
+{
+  auto exec = make_object<MetricGatherer>();
+  exec->Init(sym_json, m, ctxs, lookup_linked_param_func);
+  exec->collect(cupti_json);
+  return Module(exec);
+}
+
+
+TVM_REGISTER_GLOBAL("tvm.graph_runtime_sampling.create").set_body([](TVMArgs args, TVMRetValue* rv) 
+{
+  ICHECK_GE(args.num_args, 5) << "The expected number of arguments for graph_runtime.create is "
+                                 "at least 5, but it has "
+                              << args.num_args;
+  PackedFunc lookup_linked_param_func;
+  int ctx_start_arg = 2;
+  if (args[2].type_code() == kTVMPackedFuncHandle) 
+  {
+    lookup_linked_param_func = args[2];
+    ctx_start_arg++;
+  }
+
+  *rv = MetricGathererGraphCreate(args[0], args[1], GetAllContext(args, ctx_start_arg), lookup_linked_param_func, args[2]);
+});
 
 }
 }
