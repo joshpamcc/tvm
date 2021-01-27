@@ -37,7 +37,7 @@
 #
 macro(find_cuda use_cuda)
   set(__use_cuda ${use_cuda})
-  if(${__use_cuda} MATCHES ${IS_TRUE_PATTERN})
+  if(__use_cuda STREQUAL "ON")
     find_package(CUDA QUIET)
   elseif(IS_DIRECTORY ${__use_cuda})
     set(CUDA_TOOLKIT_ROOT_DIR ${__use_cuda})
@@ -85,22 +85,29 @@ macro(find_cuda use_cuda)
         PATHS ${CUDA_TOOLKIT_ROOT_DIR}
         PATH_SUFFIXES lib lib64 targets/x86_64-linux/lib targets/x86_64-linux/lib/stubs lib64/stubs lib/x86_64-linux-gnu
         NO_DEFAULT_PATH)
+      find_library(CUDA_NVML_LIBRARY nvidia-ml
+        PATHS ${CUDA_TOOLKIT_ROOT_DIR}
+        PATH_SUFFIXES lib lib64 targets/x86_64-linux/lib targets/x86_64-linux/lib/stubs lib64/stubs lib/x86_64-linux-gnu
+        NO_DEFAULT_PATH)
+      find_library(CUDA_NVPERF_LIBRARY_TARGET nvperf_target
+        ${CUDA_TOOLKIT_ROOT_DIR}/extras/CUPTI/lib64
+        ${CUDA_TOOLKIT_ROOT_DIR}/extras/CUPTI/lib)
+      find_library(CUDA_NVPERF_LIBRARY_HOST nvperf_host
+        ${CUDA_TOOLKIT_ROOT_DIR}/extras/CUPTI/lib64
+        ${CUDA_TOOLKIT_ROOT_DIR}/extras/CUPTI/lib)
+      find_library(CUDA_CUPTI_LIBRARY cupti
+        ${CUDA_TOOLKIT_ROOT_DIR}/extras/CUPTI/lib64
+        ${CUDA_TOOLKIT_ROOT_DIR}/extras/CUPTI/lib)
+        set(CUDA_CUPTI_INCLUDE_DIRS ${CUDA_TOOLKIT_ROOT_DIR}/extras/CUPTI/include)
       find_library(CUDA_CUDNN_LIBRARY cudnn
         ${CUDA_TOOLKIT_ROOT_DIR}/lib64
-        ${CUDA_TOOLKIT_ROOT_DIR}/lib
-        NO_DEFAULT_PATH)
-      # search default path if cannot find cudnn in non-default
-      find_library(CUDA_CUDNN_LIBRARY cudnn)
+        ${CUDA_TOOLKIT_ROOT_DIR}/lib)
       find_library(CUDA_CUBLAS_LIBRARY cublas
         ${CUDA_TOOLKIT_ROOT_DIR}/lib64
-        ${CUDA_TOOLKIT_ROOT_DIR}/lib
-        NO_DEFAULT_PATH)
-      find_library(CUDA_CUBLASLT_LIBRARY
-        NAMES cublaslt cublasLt
-        PATHS
+        ${CUDA_TOOLKIT_ROOT_DIR}/lib)
+      find_library(CUDA_CUBLASLT_LIBRARY cublaslt
         ${CUDA_TOOLKIT_ROOT_DIR}/lib64
-        ${CUDA_TOOLKIT_ROOT_DIR}/lib
-        NO_DEFAULT_PATH)
+        ${CUDA_TOOLKIT_ROOT_DIR}/lib)
     endif(MSVC)
     message(STATUS "Found CUDA_TOOLKIT_ROOT_DIR=" ${CUDA_TOOLKIT_ROOT_DIR})
     message(STATUS "Found CUDA_CUDA_LIBRARY=" ${CUDA_CUDA_LIBRARY})

@@ -1,4 +1,4 @@
-#include "graph_runtime.h"
+#include "MetricGatherer.h"
 #include <nlohmann/json.hpp>
 #include <chrono>
 #include "Sampling/CUPTI_metricsProfiler.h"
@@ -7,7 +7,7 @@ namespace tvm {
 namespace runtime {
 
 
-class MetricGatherer : public GraphRuntime 
+class MetricGather : public MetricGatherer 
 {
  public:
  
@@ -19,7 +19,7 @@ class MetricGatherer : public GraphRuntime
         }
     }
 
-    std::string collect(std::string config) //dev id = 0
+    std::string MetricGatherer::collect(std::string config) //dev id = 0
     {
       json Config = json::parse(config); //gets metric/event config
       json operationData = json::object();
@@ -63,14 +63,14 @@ class MetricGatherer : public GraphRuntime
     PackedFunc GetFunction(const std::string& name, const ObjectPtr<Object>& sptr_to_self);
 };
 
-PackedFunc MetricGatherer::GetFunction(const std::string& name, const ObjectPtr<Object>& sptr_to_self) 
+PackedFunc MetricGather::GetFunction(const std::string& name, const ObjectPtr<Object>& sptr_to_self) 
 {
   // return member functions during query.
   if (name == "collect") 
   {
     return PackedFunc([sptr_to_self, this](TVMArgs args, TVMRetValue* rv) 
     {
-      *rv = this->MetricGatherer::collect(args[0]); //run thing
+      *rv = this->MetricGather::collect(args[0]); //run thing
     });
   } 
   else 
@@ -83,7 +83,7 @@ PackedFunc MetricGatherer::GetFunction(const std::string& name, const ObjectPtr<
 Module MetricGathererGraphCreate(const std::string& sym_json, const tvm::runtime::Module& m, const std::vector<TVMContext>& ctxs, PackedFunc lookup_linked_param_func, const std::string& cupti_json) 
 {
   auto exec = make_object<MetricGatherer>();
-  exec->Init(sym_json, m, ctxs, lookup_linked_param_func);
+  //exec->Init(sym_json, m, ctxs, lookup_linked_param_func);
   exec->collect(cupti_json);
   return Module(exec);
 }
@@ -95,14 +95,28 @@ TVM_REGISTER_GLOBAL("tvm.graph_runtime_sampling.create").set_body([](TVMArgs arg
                                  "at least 5, but it has "
                               << args.num_args;
   PackedFunc lookup_linked_param_func;
-  int ctx_start_arg = 2;
-  if (args[2].type_code() == kTVMPackedFuncHandle) 
-  {
-    lookup_linked_param_func = args[2];
-    ctx_start_arg++;
-  }
+  // int ctx_start_arg = 2;
+  // if (args[2].type_code() == kTVMPackedFuncHandle) 
+  // {
+  //   lookup_linked_param_func = args[2];
+  //   ctx_start_arg++;
+  // }
 
-  *rv = MetricGathererGraphCreate(args[0], args[1], GetAllContext(args, ctx_start_arg), lookup_linked_param_func, args[2]);
+  // *rv = MetricGathererGraphCreate(args[0], args[1], GetAllContext(args, ctx_start_arg), lookup_linked_param_func, args[2]);
+});
+
+TVM_REGISTER_GLOBAL("tvm.graph_runtime.create").set_body([](TVMArgs args, TVMRetValue* rv) {
+  ICHECK_GE(args.num_args, 4) << "The expected number of arguments for graph_runtime.create is "
+                                 "at least 4, but it has "
+                              << args.num_args;
+  PackedFunc lookup_linked_param_func;
+  // int ctx_start_arg = 2;
+  // if (args[2].type_code() == kTVMPackedFuncHandle) {
+  //   lookup_linked_param_func = args[2];
+  //   ctx_start_arg++;
+  // }
+  // const auto& contexts = GetAllContext(args, ctx_start_arg);
+  // *rv = GraphRuntimeCreate(args[0], args[1], contexts, lookup_linked_param_func);
 });
 
 }
