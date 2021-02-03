@@ -75,5 +75,7 @@ class TVMCuptiInterface
         static void CUPTIAPI get_CUPTI_Activity(CUcontext ctx, uint32_t streamId, uint8_t *buffer, size_t size, size_t validSize);
 
         static json stop_CUPTI_Gathering();
+        
+        static void Insert_CUPTI_Config(json config);
 
 };

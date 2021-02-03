@@ -168,8 +168,8 @@ void TVMCuptiInterface::parse(std::string events[], std::string metrics[], int n
 void TVMCuptiInterface::setup_CUPTI_Gathering()
 {
     cudaDeviceSynchronize();
-    cuptiActivityEnable(CUPTI_ACTIVITY_KIND_KERNEL);
-    cuptiActivityRegisterCallbacks(TVMCuptiInterface::allocate_Buffer, TVMCuptiInterface::get_CUPTI_Activity);
+    // cuptiActivityEnable(CUPTI_ACTIVITY_KIND_KERNEL);
+    // cuptiActivityRegisterCallbacks(TVMCuptiInterface::allocate_Buffer, TVMCuptiInterface::get_CUPTI_Activity);
     //
 
     catchCUPTIError(cuptiSetEventCollectionMode(TVMCuptiInterface::CurrentDevice->device_context, CUPTI_EVENT_COLLECTION_MODE_KERNEL));
@@ -377,11 +377,30 @@ json TVMCuptiInterface::stop_CUPTI_Gathering()
         report["kernels"].push_back(kernel);
         free(Kernel);
     }
-
-    // std::ofstream outputFile("./CuptiOutput.json");
-    // std::ostream_iterator<json> output_ittr(outputFile, "\n");
-    // std::copy(report.begin(), report.end(), output_ittr);
     return report;
+}
+
+void TVMCuptiInterface::Insert_CUPTI_Config(json config)
+{
+    if (config != NULL)
+    {
+        std::vector<std::string> metrics;
+        std::vector<std::string> events;
+        for(int i = 0;i < config["metrics"].size(); i++)
+        {
+            metrics.push_back(config["metrics"].at(i)["name"]);
+        }
+        for(int i = 0;i < config["events"].size(); i++)
+        {
+            events.push_back(config["events"].at(i)["name"]);
+        }
+        TVMCuptiInterface::parse(events.data(), metrics.data(), metrics.size(), events.size(), 0);
+    }
+    else
+    {
+        std::cerr<<"No config";
+        exit(-1);
+    }
 }
 
 TVMCuptiInterface::~TVMCuptiInterface(){}

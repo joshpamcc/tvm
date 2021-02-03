@@ -30,7 +30,7 @@
 #include <dmlc/memory_io.h>
 #include <tvm/runtime/ndarray.h>
 #include <tvm/runtime/packed_func.h>
-
+#include "Sampling/CUPTI_metricsProfiler.h"
 #include <memory>
 #include <string>
 #include <unordered_map>

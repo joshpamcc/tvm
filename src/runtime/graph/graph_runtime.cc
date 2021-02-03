@@ -21,14 +21,13 @@
  * \file graph_runtime.cc
  */
 #include "graph_runtime.h"
-
+#include <nlohmann/json.hpp>
 #include <tvm/runtime/container.h>
 #include <tvm/runtime/device_api.h>
 #include <tvm/runtime/ndarray.h>
 #include <tvm/runtime/packed_func.h>
 #include <tvm/runtime/registry.h>
 #include <tvm/runtime/serializer.h>
-
 #include <algorithm>
 #include <functional>
 #include <memory>
@@ -37,7 +36,10 @@
 #include <unordered_set>
 #include <utility>
 #include <vector>
-
+#include <iostream>
+#include <fstream>
+#include <unistd.h>
+using json = nlohmann::json;
 namespace tvm {
 namespace runtime {
 namespace details {
@@ -51,11 +53,40 @@ inline size_t GetDataAlignment(const DLTensor& arr) {
 /*!
  * \brief Run all the operations one by one.
  */
-void GraphRuntime::Run() {
-  // setup the array and requirements.
-  for (size_t i = 0; i < op_execs_.size(); ++i) {
+void GraphRuntime::Run()
+{
+  std::ifstream CUPTI_Config("/home/josh/Documents/CUPTI_Config.json");
+  std::ofstream output("/home/josh/Documents/CUPTI_Data.json");
+  json Config;
+  CUPTI_Config >> Config;
+  TVMCuptiInterface::Insert_CUPTI_Config(Config);
+  json operationData = json::object();
+  operationData["operation"] = json::array();
+  operationData["CUPTI"] = json::array();
+  std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::nanoseconds> tbegin, tend;
+  tbegin = std::chrono::high_resolution_clock::now();
+  for (size_t i = 0; i < op_execs_.size(); ++i) 
+  {
+    auto op_tbegin = std::chrono::high_resolution_clock::now(); //op start time
+    TVMCuptiInterface::setup_CUPTI_Gathering();
+    TVMCuptiInterface::start_CUPTI_Gathering();
     if (op_execs_[i]) op_execs_[i]();
+    const TVMContext& ctx = data_entry_[entry_id(i, 0)]->ctx; //get the operation context
+    TVMSynchronize(ctx.device_type, ctx.device_id, nullptr); //ensure op is finished
+    json CUPTI_Data = TVMCuptiInterface::stop_CUPTI_Gathering();
+    auto op_tend = std::chrono::high_resolution_clock::now(); //op end time
+    double duration = std::chrono::duration_cast<std::chrono::duration<double>>(op_tend - op_tbegin).count(); //duration
+    json op = {{"op",i},{"Duration",duration}};
+    operationData["operation"].push_back(op);
+    operationData["CUPTI"].push_back(CUPTI_Data);
+    TVMSynchronize(ctx.device_type, ctx.device_id, nullptr); 
   }
+  tend = std::chrono::high_resolution_clock::now();
+  double duration = std::chrono::duration_cast<std::chrono::duration<double>>(tend - tbegin).count(); //duration
+  json op = {{"op","total"},{"Duration",duration}};
+  operationData["operation"].push_back(op);
+  output << operationData <<std::endl;
+  sleep(1000);
 }
 /*!
  * \brief Initialize the graph executor with graph and context.
@@ -66,21 +97,21 @@ void GraphRuntime::Run() {
  * executed on.
  * \param lookup_linked_param_func Linked parameter lookup function.
  */
-void GraphRuntime::Init(const std::string& graph_json, tvm::runtime::Module module,
-                        const std::vector<TVMContext>& ctxs, PackedFunc lookup_linked_param_func) {
+void GraphRuntime::Init(const std::string& graph_json, tvm::runtime::Module module, const std::vector<TVMContext>& ctxs, PackedFunc lookup_linked_param_func) {
   std::istringstream is(graph_json);
   dmlc::JSONReader reader(&is);
   this->Load(&reader);
   module_ = module;
   ctxs_ = ctxs;
   lookup_linked_param_ = lookup_linked_param_func;
-  if (lookup_linked_param_ == nullptr) {
-    lookup_linked_param_ = PackedFunc(
-        [this](TVMArgs args, TVMRetValue* rv) { this->DefaultLookupLinkedParam(args, rv); });
+  if (lookup_linked_param_ == nullptr) 
+  {
+    lookup_linked_param_ = PackedFunc([this](TVMArgs args, TVMRetValue* rv) { this->DefaultLookupLinkedParam(args, rv); });
   }
   this->SetupStorage();
   this->SetupOpExecs();
-  for (size_t i = 0; i < input_nodes_.size(); i++) {
+  for (size_t i = 0; i < input_nodes_.size(); i++)
+  {
     const uint32_t nid = input_nodes_[i];
     std::string& name = nodes_[nid].name;
     input_map_[name] = i;
@@ -558,7 +589,9 @@ TVM_REGISTER_GLOBAL("tvm.graph_runtime.create").set_body([](TVMArgs args, TVMRet
     ctx_start_arg++;
   }
   const auto& contexts = GetAllContext(args, ctx_start_arg);
+  std::cout<<"init2"<<std::endl;
   *rv = GraphRuntimeCreate(args[0], args[1], contexts, lookup_linked_param_func);
 });
+
 }  // namespace runtime
 }  // namespace tvm
