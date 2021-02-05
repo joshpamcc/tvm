@@ -1,5 +1,3 @@
-#include "tvm/runtime/packed_func.h"
-#include "tvm/runtime/registry.h"
 #include <nlohmann/json.hpp>
 #include <iostream>
 #include <cuda.h>
@@ -9,10 +7,6 @@
 #include <vector>
 #include <fstream>
 #include <chrono>
-
-using json = nlohmann::json;
-using namespace tvm;
-using namespace runtime;
 
 class TVMCuptiInterface
 {
@@ -74,8 +68,9 @@ class TVMCuptiInterface
 
         static void CUPTIAPI get_CUPTI_Activity(CUcontext ctx, uint32_t streamId, uint8_t *buffer, size_t size, size_t validSize);
 
-        static json stop_CUPTI_Gathering();
+        static std::string stop_CUPTI_Gathering();
         
-        static void Insert_CUPTI_Config(json config);
+        static void Insert_CUPTI_Config(std::string input);
 
+        static void helloWorld();
 };

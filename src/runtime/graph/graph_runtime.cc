@@ -20,6 +20,8 @@
 /*!
  * \file graph_runtime.cc
  */
+
+
 #include "graph_runtime.h"
 #include <nlohmann/json.hpp>
 #include <tvm/runtime/container.h>
@@ -39,13 +41,12 @@
 #include <iostream>
 #include <fstream>
 #include <unistd.h>
-using json = nlohmann::json;
-namespace tvm {
-namespace runtime {
+#include "CUPTI_metricsProfiler.h"
+
 namespace details {
 inline size_t GetDataAlignment(const DLTensor& arr) {
   size_t align = (arr.dtype.bits / 8) * arr.dtype.lanes;
-  if (align < kAllocAlignment) return kAllocAlignment;
+  if (align < tvm::runtime::kAllocAlignment) return tvm::runtime::kAllocAlignment;
   return align;
 }
 }  // namespace details
@@ -53,41 +54,55 @@ inline size_t GetDataAlignment(const DLTensor& arr) {
 /*!
  * \brief Run all the operations one by one.
  */
-void GraphRuntime::Run()
+void tvm::runtime::GraphRuntime::Run()
 {
-  std::ifstream CUPTI_Config("/home/josh/Documents/CUPTI_Config.json");
-  std::ofstream output("/home/josh/Documents/CUPTI_Data.json");
-  json Config;
+  std::ifstream CUPTI_Config("/media/josh/Stuff/Storage/Uni/Year_3/scc_310/work/diss_stuff/CUPTI_Config.json");
+  std::ofstream output("/media/josh/Stuff/Storage/Uni/Year_3/scc_310/work/diss_stuff/CUPTI_Data.json");
+  std::cout<<"test"<<std::endl;
+  std::cerr<<"testing"<<std::endl;
+  nlohmann::json Config;
   CUPTI_Config >> Config;
-  TVMCuptiInterface::Insert_CUPTI_Config(Config);
-  json operationData = json::object();
-  operationData["operation"] = json::array();
-  operationData["CUPTI"] = json::array();
+  std::cout<<"inserting config"<<std::endl;
+  TVMCuptiInterface::Insert_CUPTI_Config(Config.dump());
+  nlohmann::json operationData = nlohmann::json::object();
+  operationData["operation"] = nlohmann::json::array();
+  operationData["CUPTI"] = nlohmann::json::array();
   std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::nanoseconds> tbegin, tend;
   tbegin = std::chrono::high_resolution_clock::now();
+  std::cout<<"starting"<<std::endl;
+  
   for (size_t i = 0; i < op_execs_.size(); ++i) 
   {
-    auto op_tbegin = std::chrono::high_resolution_clock::now(); //op start time
-    TVMCuptiInterface::setup_CUPTI_Gathering();
-    TVMCuptiInterface::start_CUPTI_Gathering();
+    std::cout<<"op: "<<i<<std::endl;
+     TVMCuptiInterface::setup_CUPTI_Gathering();
     if (op_execs_[i]) op_execs_[i]();
+   
+    auto op_tbegin = std::chrono::high_resolution_clock::now(); //op start time
+    TVMCuptiInterface::start_CUPTI_Gathering();
     const TVMContext& ctx = data_entry_[entry_id(i, 0)]->ctx; //get the operation context
     TVMSynchronize(ctx.device_type, ctx.device_id, nullptr); //ensure op is finished
-    json CUPTI_Data = TVMCuptiInterface::stop_CUPTI_Gathering();
+    std::cout<<"done"<<std::endl;
+    std::string output = TVMCuptiInterface::stop_CUPTI_Gathering();
+    nlohmann::json CUPTI_Data = nlohmann::json::parse(output);
     auto op_tend = std::chrono::high_resolution_clock::now(); //op end time
     double duration = std::chrono::duration_cast<std::chrono::duration<double>>(op_tend - op_tbegin).count(); //duration
-    json op = {{"op",i},{"Duration",duration}};
+    nlohmann::json op = {{"op",i},{"Duration",duration}};
     operationData["operation"].push_back(op);
     operationData["CUPTI"].push_back(CUPTI_Data);
+    std::cout<<"added data"<<std::endl;
     TVMSynchronize(ctx.device_type, ctx.device_id, nullptr); 
   }
   tend = std::chrono::high_resolution_clock::now();
   double duration = std::chrono::duration_cast<std::chrono::duration<double>>(tend - tbegin).count(); //duration
-  json op = {{"op","total"},{"Duration",duration}};
+  nlohmann::json op = {{"op","total"},{"Duration",duration}};
   operationData["operation"].push_back(op);
   output << operationData <<std::endl;
   sleep(1000);
 }
+
+namespace tvm {
+namespace runtime {
+
 /*!
  * \brief Initialize the graph executor with graph and context.
  * \param graph_json The execution graph.
@@ -103,6 +118,7 @@ void GraphRuntime::Init(const std::string& graph_json, tvm::runtime::Module modu
   this->Load(&reader);
   module_ = module;
   ctxs_ = ctxs;
+  std::cerr<<"initalising";
   lookup_linked_param_ = lookup_linked_param_func;
   if (lookup_linked_param_ == nullptr) 
   {
@@ -194,6 +210,8 @@ NDArray GraphRuntime::GetInput(int index) const {
  * \return NDArray corresponding to given output node index.
  */
 NDArray GraphRuntime::GetOutput(int index) const {
+  std::cout<<"test";
+  
   ICHECK_LT(static_cast<size_t>(index), outputs_.size());
   uint32_t eid = this->entry_id(outputs_[index]);
   return data_entry_[eid];

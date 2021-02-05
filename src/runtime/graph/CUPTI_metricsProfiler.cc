@@ -161,12 +161,11 @@ void createDevice(int deviceID) //creates and gets device context for the provid
     name[sizeof(name) - 1] = '\0';
     Devicedata->device_name = std::string(name);
     TVMCuptiInterface::CurrentDevice = Devicedata;
-    std::cout<<"created device"<<std::endl;
 }
 
 void TVMCuptiInterface::parse(std::string events[], std::string metrics[], int num_metrics, int num_events, int deviceID)
 {
-    std::cout<<"parsing config"<<std::endl;
+    std::cout<<"parsing"<<std::endl;
     catchCUDAError(cuInit(0));
     createDevice(deviceID);
     CUpti_MetricID *metricID[num_metrics];
@@ -174,7 +173,7 @@ void TVMCuptiInterface::parse(std::string events[], std::string metrics[], int n
     getMetrics(metrics, num_metrics, metricID);
     getEvents(events, num_events, eventID);
     createEventData(eventID, metricID, num_metrics, num_events, metrics);
-    std::cout<<"Created eventData"<<std::endl;
+    std::cout<<"created event data"<<std::endl;
 }
 
 void TVMCuptiInterface::setup_CUPTI_Gathering()
@@ -182,7 +181,7 @@ void TVMCuptiInterface::setup_CUPTI_Gathering()
     cudaDeviceSynchronize();
     // cuptiActivityEnable(CUPTI_ACTIVITY_KIND_KERNEL);
     // cuptiActivityRegisterCallbacks(TVMCuptiInterface::allocate_Buffer, TVMCuptiInterface::get_CUPTI_Activity);
-    std::cout<<"setup Gathering"<<std::endl;
+    //
 
     catchCUPTIError(cuptiSetEventCollectionMode(TVMCuptiInterface::CurrentDevice->device_context, CUPTI_EVENT_COLLECTION_MODE_KERNEL));
     if (TVMCuptiInterface::CurrentConfiguration->num_metrics > 0)
@@ -193,8 +192,7 @@ void TVMCuptiInterface::setup_CUPTI_Gathering()
                                                         &(TVMCuptiInterface::CurrentConfiguration->metric)));
         TVMCuptiInterface::CurrentConfiguration->num_metric_passes = &(TVMCuptiInterface::CurrentConfiguration->metric->numSets);
     }
-    std::cout<<"added metrics"<<std::endl;
-
+    std::cout<<"created metrics"<<std::endl;
     if (TVMCuptiInterface::CurrentConfiguration->num_events > 0)
     {
         catchCUPTIError(cuptiEventGroupSetsCreate(TVMCuptiInterface::CurrentDevice->device_context, 
@@ -203,30 +201,45 @@ void TVMCuptiInterface::setup_CUPTI_Gathering()
                                                   &(TVMCuptiInterface::CurrentConfiguration->event)));
         TVMCuptiInterface::CurrentConfiguration->num_events_passes = &(TVMCuptiInterface::CurrentConfiguration->event->numSets);
     } 
-    std::cout<<"finished setup"<<std::endl;
+    std::cout<<"initalised event groups"<<std::endl;
 }
 
 void TVMCuptiInterface::start_CUPTI_Gathering()
 {
-    for(int i = 0; i < (int) TVMCuptiInterface::CurrentConfiguration->event->numSets; i++)
-    { 
-        uint32_t flag = 1;
-        cuptiEventGroupSetAttribute(TVMCuptiInterface::CurrentConfiguration->event->sets->eventGroups[i], 
-                                    CUPTI_EVENT_GROUP_ATTR_PROFILE_ALL_DOMAIN_INSTANCES, sizeof(flag), &flag);
-        cuptiEventGroupEnable(TVMCuptiInterface::CurrentConfiguration->event->sets->eventGroups[i]);
-    }
-    for(int i = 0; i < (int) TVMCuptiInterface::CurrentConfiguration->metric->numSets; i++)
+    std::cout<<"starting gathering"<<std::endl;
+    std::cout<<"event: "<<TVMCuptiInterface::CurrentConfiguration->num_events<<std::endl;
+    std::cout<<"metric: "<<TVMCuptiInterface::CurrentConfiguration->num_metrics<<std::endl;
+    if (TVMCuptiInterface::CurrentConfiguration->num_events > 0)
     {
-        uint32_t flag = 1; 
-        cuptiEventGroupSetAttribute(TVMCuptiInterface::CurrentConfiguration->metric->sets->eventGroups[i], 
-                                    CUPTI_EVENT_GROUP_ATTR_PROFILE_ALL_DOMAIN_INSTANCES, sizeof(flag), &flag);
-        cuptiEventGroupEnable(TVMCuptiInterface::CurrentConfiguration->metric->sets->eventGroups[i]);
+        for(int i = 0; i < (int) TVMCuptiInterface::CurrentConfiguration->event->numSets; i++)
+        { 
+            uint32_t flag = 1;
+            cuptiEventGroupSetAttribute(TVMCuptiInterface::CurrentConfiguration->event->sets->eventGroups[i], 
+                                        CUPTI_EVENT_GROUP_ATTR_PROFILE_ALL_DOMAIN_INSTANCES, sizeof(flag), &flag);
+            cuptiEventGroupEnable(TVMCuptiInterface::CurrentConfiguration->event->sets->eventGroups[i]);
+        }
     }
+    std::cout<<"started event gathering"<<std::endl;
+    std::cout<<"metric sets: "<<(int) TVMCuptiInterface::CurrentConfiguration->metric->numSets<<std::endl;
+    if (TVMCuptiInterface::CurrentConfiguration->num_metrics > 0)
+    {
+        for(int i = 0; i < (int) TVMCuptiInterface::CurrentConfiguration->metric->numSets; i++)
+        {
+            uint32_t flag = 1; 
+            
+            cuptiEventGroupSetAttribute(TVMCuptiInterface::CurrentConfiguration->metric->sets->eventGroups[i], 
+                                        CUPTI_EVENT_GROUP_ATTR_PROFILE_ALL_DOMAIN_INSTANCES, sizeof(flag), &flag);
+            cuptiEventGroupEnable(TVMCuptiInterface::CurrentConfiguration->metric->sets->eventGroups[i]);
+        }
+    }
+    
+    std::cout<<"started metric gathering"<<std::endl;
     cudaEventRecord(TVMCuptiInterface::CurrentConfiguration->Start, NULL);
 }
 
 std::string TVMCuptiInterface::stop_CUPTI_Gathering()
 {
+    std::cout<<"stopping collection"<<std::endl;
     json report = json::object();
     report["metrics"] = json::array();
     report["events"] = json::array();
@@ -237,20 +250,29 @@ std::string TVMCuptiInterface::stop_CUPTI_Gathering()
     std::vector<CUpti_EventID*> eventIDs;
     std::vector<size_t> eventSizes;
     std::vector<size_t> eventNumbers;
-    int numEventGroups = (int) (TVMCuptiInterface::CurrentConfiguration->metric->numSets + TVMCuptiInterface::CurrentConfiguration->event->numSets);
+    int numEventGroups;
+    if (TVMCuptiInterface::CurrentConfiguration->num_events > 0)
+    {
+        numEventGroups = (int) (TVMCuptiInterface::CurrentConfiguration->metric->numSets + TVMCuptiInterface::CurrentConfiguration->event->numSets);
+    }
+    else
+    {
+        numEventGroups = (int) TVMCuptiInterface::CurrentConfiguration->metric->numSets;
+    }
     for (int j = 0; j < numEventGroups; j++)
     {
-        CUpti_EventGroup group ;
+        CUpti_EventGroup group;
         if (j < (int) TVMCuptiInterface::CurrentConfiguration->metric->numSets)
         {
             group = TVMCuptiInterface::CurrentConfiguration->metric->sets->eventGroups[j];
         }
         else
         {
+            std::cout<<"event groups"<<std::endl;
             int i = j - ((int) TVMCuptiInterface::CurrentConfiguration->metric->numSets);
             group = TVMCuptiInterface::CurrentConfiguration->event->sets->eventGroups[i];
         }
-        
+        std::cout<<"gathering events"<<std::endl;
         uint32_t numInstnaces, numTotalInstances, numEvents;
         CUpti_EventDomainID groupDomain;
         size_t numInstanceSize = sizeof(uint32_t);
@@ -410,7 +432,6 @@ void TVMCuptiInterface::Insert_CUPTI_Config(std::string input)
         {
             events.push_back(config["events"].at(i)["name"]);
         }
-        std::cout<<"Adding config"<<std::endl;
         TVMCuptiInterface::parse(events.data(), metrics.data(), metrics.size(), events.size(), 0);
     }
     else
@@ -418,6 +439,11 @@ void TVMCuptiInterface::Insert_CUPTI_Config(std::string input)
         std::cerr<<"No config";
         exit(-1);
     }
+}
+
+void TVMCuptiInterface::helloWorld()
+{
+    std::cout<<"Hello World"<<std::endl;
 }
 
 TVMCuptiInterface::~TVMCuptiInterface(){}
