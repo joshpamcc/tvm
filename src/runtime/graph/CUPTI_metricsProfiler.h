@@ -2,6 +2,7 @@
 #include <iostream>
 #include <cuda.h>
 #include <cupti.h>
+#include <nvml.h>
 #include <cuda_runtime.h>
 #include <stdio.h>
 #include <vector>
@@ -18,6 +19,7 @@ class TVMCuptiInterface
         {
             int device_id;
             CUdevice device;
+            nvmlDevice_t NVML_Device;
             CUcontext device_context;
             std::string device_name;
         }DeviceData_t;
@@ -43,34 +45,35 @@ class TVMCuptiInterface
             int64_t gridID;
             CUpti_ActivityPartitionedGlobalCacheConfig partitionedGlobalCacheRequested, partitionedGlobalCacheExecuted;
             const char *name;
+            cudaEvent_t Start, Stop;
         }Kernel_t;
 
-        // typedef struct ActivityData
-        // {
-        //     int num_activities;
-        //     std::vector<uint8_t*> buffers;
-        //     std::vector<size_t*> bufferSize;
-        //     std::vector<size_t*> maxBufferSize;
-        //     std::vector<Kernel_t*> kernels;
-        // }ActivityData_t;
-    
+        typedef struct EventValues
+        {
+            std::vector<uint64_t*> eventValues;
+            std::vector<CUpti_EventID*> eventIDs;
+            std::vector<size_t> eventSizes;
+            std::vector<size_t> eventNumbers;
+            cudaEvent_t Start;
+        }EventValues_t;
+
+        typedef struct NVMLData
+        {
+            uint *temperature, *powerUsage, *powerLimit;
+        }NVMLData_t;
+
+        static EventValues *CurrentEventValues;
         static EventData *CurrentConfiguration;
         static DeviceData *CurrentDevice;
         static std::vector<Kernel_t*> Currentkernels;
-
-        static void parse(std::string eventNames[], std::string metricNames[], int num_metrics, int num_events, int deviceID);
-
-        static void setup_CUPTI_Gathering();
-
-        static void start_CUPTI_Gathering();
-
-        static void CUPTIAPI allocate_Buffer(uint8_t **buffer, size_t *size, size_t *maxNumRecords);
-
-        static void CUPTIAPI get_CUPTI_Activity(CUcontext ctx, uint32_t streamId, uint8_t *buffer, size_t size, size_t validSize);
-
-        static std::string stop_CUPTI_Gathering();
-        
+        static void parse(std::string eventNames[], std::string metricNames[], int num_metrics, int num_events);
+        static void setup_CUPTI_Metrics(int index);
+        static void setup_CUPTI_Events();
+        static void setup_Kernel_Gathering();
+        static std::string stop_Kernel_Gathering();
+        static void start_CUPTI_Gathering(int metGroupSet, int metGroup, bool eventsSampled);
+        static void createDevice(int id);
+        static std::string stop_CUPTI_Gathering(int metGroupSet, int metGroup, bool eventsSampled, int metIndex);
         static void Insert_CUPTI_Config(std::string input);
-
-        static void helloWorld();
+        static void newConfig();
 };

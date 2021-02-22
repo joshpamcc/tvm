@@ -40,6 +40,7 @@
 #include <vector>
 #include <iostream>
 #include <fstream>
+#include <iomanip>
 #include <unistd.h>
 #include "CUPTI_metricsProfiler.h"
 
@@ -58,46 +59,94 @@ void tvm::runtime::GraphRuntime::Run()
 {
   std::ifstream CUPTI_Config("/media/josh/Stuff/Storage/Uni/Year_3/scc_310/work/diss_stuff/CUPTI_Config.json");
   std::ofstream output("/media/josh/Stuff/Storage/Uni/Year_3/scc_310/work/diss_stuff/CUPTI_Data.json");
-  std::cout<<"test"<<std::endl;
-  std::cerr<<"testing"<<std::endl;
   nlohmann::json Config;
   CUPTI_Config >> Config;
-  std::cout<<"inserting config"<<std::endl;
+  TVMCuptiInterface::createDevice(0);
   TVMCuptiInterface::Insert_CUPTI_Config(Config.dump());
   nlohmann::json operationData = nlohmann::json::object();
-  operationData["operation"] = nlohmann::json::array();
+  operationData["Op_Duration"] = nlohmann::json::array();
   operationData["CUPTI"] = nlohmann::json::array();
+  operationData["Kernel"] = nlohmann::json::array();
   std::chrono::time_point<std::chrono::high_resolution_clock, std::chrono::nanoseconds> tbegin, tend;
-  tbegin = std::chrono::high_resolution_clock::now();
-  std::cout<<"starting"<<std::endl;
-  
+  TVMCuptiInterface::setup_CUPTI_Events();
   for (size_t i = 0; i < op_execs_.size(); ++i) 
   {
-    std::cout<<"op: "<<i<<std::endl;
-     TVMCuptiInterface::setup_CUPTI_Gathering();
-    if (op_execs_[i]) op_execs_[i]();
-   
-    auto op_tbegin = std::chrono::high_resolution_clock::now(); //op start time
-    TVMCuptiInterface::start_CUPTI_Gathering();
+    std::cout<<"op: "<<i<<"/"<<op_execs_.size()<<std::endl; 
     const TVMContext& ctx = data_entry_[entry_id(i, 0)]->ctx; //get the operation context
-    TVMSynchronize(ctx.device_type, ctx.device_id, nullptr); //ensure op is finished
-    std::cout<<"done"<<std::endl;
-    std::string output = TVMCuptiInterface::stop_CUPTI_Gathering();
-    nlohmann::json CUPTI_Data = nlohmann::json::parse(output);
-    auto op_tend = std::chrono::high_resolution_clock::now(); //op end time
-    double duration = std::chrono::duration_cast<std::chrono::duration<double>>(op_tend - op_tbegin).count(); //duration
-    nlohmann::json op = {{"op",i},{"Duration",duration}};
-    operationData["operation"].push_back(op);
-    operationData["CUPTI"].push_back(CUPTI_Data);
-    std::cout<<"added data"<<std::endl;
-    TVMSynchronize(ctx.device_type, ctx.device_id, nullptr); 
+    for (int j = 0; j < 3; j++)
+    {
+      if (j == 0)
+      {
+        auto op_tbegin = std::chrono::high_resolution_clock::now(); //op start time
+        if (op_execs_[i]) op_execs_[i]();
+        auto op_tend = std::chrono::high_resolution_clock::now(); //op end time
+        double duration = std::chrono::duration_cast<std::chrono::duration<double>>(op_tend - op_tbegin).count(); //duration
+        nlohmann::json op = {{"name",i},{"Duration",(double) duration}};
+        //std::cout<<"opdur: "<<duration<<std::endl;
+        operationData["Op_Duration"].push_back(op);
+      }
+      else if(j == 1)
+      {
+        TVMCuptiInterface::setup_Kernel_Gathering();
+        if (op_execs_[i]) op_execs_[i]();
+        TVMSynchronize(ctx.device_type, ctx.device_id, nullptr); //ensure op is finished
+        std::string output = TVMCuptiInterface::stop_Kernel_Gathering();
+        nlohmann::json Kernel_Data = nlohmann::json::parse(output);
+        operationData["Kernel"].push_back(Kernel_Data);
+        TVMSynchronize(ctx.device_type, ctx.device_id, nullptr); 
+      }
+      else
+      {
+        bool eventsSampled = false;
+        nlohmann::json cupti_OP = nlohmann::json::object(); 
+        cupti_OP["events"] = nlohmann::json::array();
+        cupti_OP["metrics"] = nlohmann::json::array();
+        cupti_OP["duration"] = nlohmann::json::array();
+        cupti_OP["NVML"] = nlohmann::json::array();
+        for (int l = 0; l < TVMCuptiInterface::CurrentConfiguration->num_metrics; l++)
+        {
+          TVMCuptiInterface::setup_CUPTI_Metrics(l);
+          if (l > 0)
+          {
+            eventsSampled = true;
+          }
+          else
+          {
+            TVMCuptiInterface::setup_CUPTI_Events();
+          }
+          int numMetPasses = (int) *TVMCuptiInterface::CurrentConfiguration->num_metric_passes;
+          for(int f = 0; f < numMetPasses; f++)
+          {
+            int numMetGroups = TVMCuptiInterface::CurrentConfiguration->metric->sets[f].numEventGroups;
+            for(int z = 0; z < numMetGroups; z++)
+            {    
+              if (z > 0)
+              {
+                eventsSampled = true;
+              }
+              //std::cout<<"Gathering: "<<TVMCuptiInterface::CurrentConfiguration->metric_names[l]<<" "<<f<<"/"<<(int) *TVMCuptiInterface::CurrentConfiguration->num_metric_passes<<std::endl;
+              //std::cout<<"subgrp: "<<z<<"/"<<TVMCuptiInterface::CurrentConfiguration->metric->sets[f].numEventGroups<<std::endl;
+              TVMCuptiInterface::start_CUPTI_Gathering(f,z,eventsSampled);
+              if (op_execs_[i]) op_execs_[i]();
+              TVMSynchronize(ctx.device_type, ctx.device_id, nullptr); //ensure op is finished
+              std::string output = TVMCuptiInterface::stop_CUPTI_Gathering(f,z,eventsSampled,l);
+              if (output != "wait")
+              {
+                nlohmann::json CUPTI_Data = nlohmann::json::parse(output);
+                cupti_OP["events"].push_back(CUPTI_Data["events"]);
+                cupti_OP["metrics"].push_back(CUPTI_Data["metrics"]);
+                cupti_OP["duration"].push_back(CUPTI_Data["duration"]);
+                cupti_OP["NVML"].push_back(CUPTI_Data["NVML"]);
+              }
+            }
+          }
+        }
+        operationData["CUPTI"].push_back(cupti_OP);
+      }
+    }
   }
-  tend = std::chrono::high_resolution_clock::now();
-  double duration = std::chrono::duration_cast<std::chrono::duration<double>>(tend - tbegin).count(); //duration
-  nlohmann::json op = {{"op","total"},{"Duration",duration}};
-  operationData["operation"].push_back(op);
-  output << operationData <<std::endl;
-  sleep(1000);
+  std::cout<<"operations finished"<<std::endl;
+  output << operationData <<std::setw(5)<<std::endl;
 }
 
 namespace tvm {
@@ -118,7 +167,6 @@ void GraphRuntime::Init(const std::string& graph_json, tvm::runtime::Module modu
   this->Load(&reader);
   module_ = module;
   ctxs_ = ctxs;
-  std::cerr<<"initalising";
   lookup_linked_param_ = lookup_linked_param_func;
   if (lookup_linked_param_ == nullptr) 
   {
